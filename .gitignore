@@ -144,3 +144,14 @@ pyvenv.cfg
 pip-selfcheck.json
 all_dash_public/public-dashboards.json
 get_all_child_orgs/org_list.json
+
+# ignore any downloaded datadog objects
+dashboards/
+monitors/
+users/
+synthetic_api_tests/
+synthetic_browser_tests/
+awsaccounts/
+awsaccounts/
+logpipelines/
+notebooks/
