@@ -2,22 +2,29 @@
 """Usage:
   dogmover.py pull (<type>) [--tag=tag]... [--dry-run] [-h]
   dogmover.py push (<type>) [--dry-run] [-h]
+  dogmover.py edit (<type>) [--dry-run] [-h]
+  dogmover.py validate (<type>) [--dry-run] [-h]
 
 Examples:
     Dashboards:
         dogmover.py pull dashboards
         dogmover.py push dashboards
+        dogmover.py edit dashboards
+        dogmover.py validate dashboards
 
     Synthetic api tests using --tag that only pulls tests if the tags exist on them:
         dogmover.py pull synthetic_api_tests --tag env:production --tag application:abc
         dogmover.py push synthetic_api_tests
+        dogmover.py edit synthetic_api_tests
 
     Run with --dry-run without making any changes to your Datadog account:
         dogmover.py pull dashboards --dry-run
         dogmover.py push dashboards --dry-run
+        dogmover.py edit dashboards --dry-run
+        dogmover.py validate dashboards --dry-run
 
     Supported arguments:
-    dogmover.py pull|push dashboards|monitors|users|synthetics_api_tests|synthetics_browser_tests|awsaccounts|logpipelines|notebooks (--tag=tag) (--dry-run|-h)
+    dogmover.py pull|push|edit|validate dashboards|monitors|users|synthetics_api_tests|synthetics_browser_tests|awsaccounts|logpipelines|notebooks (--tag=tag) (--dry-run|-h)
     
     Note. --tag is currently only supported for synthetics_api_tests and synthetics_browser_tests.
 
@@ -32,7 +39,17 @@ import json
 import os
 import glob
 import requests
+import logging
+import httplib
 from datadog import initialize, api
+
+# Debug logging
+httplib.HTTPConnection.debuglevel = 1
+logging.basicConfig()
+logging.getLogger().setLevel(logging.DEBUG)
+req_log = logging.getLogger('requests.packages.urllib3')
+req_log.setLevel(logging.DEBUG)
+req_log.propagate = True
 
 def _init_options(action):
     config_file = "config.json"
@@ -43,7 +60,7 @@ def _init_options(action):
         exit("No configuration file named: {} could be found.".format(config_file))
 
     options = {}
-    if action == "pull":
+    if action == "pull" or action == "edit" or action == "validate":
         options = {
             'api_key': config["source_api_key"],
             'app_key': config["source_app_key"],
@@ -263,7 +280,61 @@ def push_monitors():
         print("Pushed '{}' monitors in muted status, navigate to Monitors -> Manage downtime to unmute.".format(count))
     if err_count > 0:
         print("Error pushing '{}' monitors, please check !".format(err_count))
-        
+
+def edit_monitors():
+    err_count = 0
+    count = 0
+    monitors = _files_to_json("monitors")
+    if not monitors:
+        exit("No monitors are locally available. Consider pulling monitors first.")
+
+    for monitor in monitors:
+        with open(monitor) as f:
+            data = json.load(f)
+            print("Editing monitors:", data["id"], data["name"].encode('utf8'))
+            if not arguments["--dry-run"]:
+                result = api.Monitor.update(data["id"], data)
+
+                if 'errors' in result:
+                    print('Error Editing monitor:',data["id"],json.dumps(result, indent=4, sort_keys=True))
+                    err_count=err_count+1
+
+                else:
+                    count = count + 1
+                    mon_id= data['id']
+
+    if count > 0:
+        print("Edited '{}' monitors ".format(count))
+    if err_count > 0:
+        print("Error editing '{}' monitors, please check !".format(err_count))
+
+def validate_monitors():
+    err_count = 0
+    count = 0
+    monitors = _files_to_json("monitors")
+    if not monitors:
+        exit("No monitors are locally available. Consider pulling monitors first.")
+
+    for monitor in monitors:
+        with open(monitor) as f:
+            data = json.load(f)
+            print("Validating monitors:", data["id"], data["name"].encode('utf8'))
+            if not arguments["--dry-run"]:
+                result = api.Monitor.validate(type=data["type"], query=data["query"], options=data["options"])
+
+                if 'errors' in result:
+                    print('Error Validating monitor:',data["id"],json.dumps(result, indent=4, sort_keys=True))
+                    err_count=err_count+1
+
+                else:
+                    count = count + 1
+                    mon_id= data['id']
+
+    if count > 0:
+        print("Validateded '{}' monitors ".format(count))
+    if err_count > 0:
+        print("Error Validating '{}' monitors, please check !".format(err_count))
+
 def push_users():
     count = 0
     users = _files_to_json("users")
@@ -419,3 +490,39 @@ if __name__ == '__main__':
             push_logpipelines(_init_options("push"))
         elif arguments['<type>'] == 'notebooks':
             push_notebooks(_init_options("push"))
+    elif arguments["edit"]:
+        _init_options("edit")
+        if arguments['<type>'] == 'dashboards':
+            edit_dashboards()
+        elif arguments['<type>'] == 'monitors':
+            edit_monitors()
+        elif arguments['<type>'] == 'users':
+            edit_users()
+        elif arguments['<type>'] == 'synthetics_api_tests':
+            edit_synthetics_api_tests(_init_options("edit"))
+        elif arguments['<type>'] == 'synthetics_browser_tests':
+            edit_synthetics_browser_tests(_init_options("edit"))
+        elif arguments['<type>'] == 'awsaccounts':
+            edit_awsaccounts(_init_options("edit"))
+        elif arguments['<type>'] == 'logpipelines':
+            edit_logpipelines(_init_options("edit"))
+        elif arguments['<type>'] == 'notebooks':
+            edit_notebooks(_init_options("edit"))
+    elif arguments["validate"]:
+        _init_options("validate")
+        if arguments['<type>'] == 'dashboards':
+            validate_dashboards()
+        elif arguments['<type>'] == 'monitors':
+            validate_monitors()
+        elif arguments['<type>'] == 'users':
+            validate_users()
+        elif arguments['<type>'] == 'synthetics_api_tests':
+            validate_synthetics_api_tests(_init_options("validate"))
+        elif arguments['<type>'] == 'synthetics_browser_tests':
+            validate_synthetics_browser_tests(_init_options("validate"))
+        elif arguments['<type>'] == 'awsaccounts':
+            validate_awsaccounts(_init_options("validate"))
+        elif arguments['<type>'] == 'logpipelines':
+            validate_logpipelines(_init_options("validate"))
+        elif arguments['<type>'] == 'notebooks':
+            validate_notebooks(_init_options("validate"))
